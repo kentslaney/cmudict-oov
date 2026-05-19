@@ -7,8 +7,6 @@ env/
 *.pth
 *.pt
 *.ckpt
-*.onnx
-*.json
 
 # Python
 __pycache__/

@@ -14,11 +14,11 @@ async function init() {
         // Load vocab
         const vocabRes = await fetch('vocab.json');
         vocab = await vocabRes.json();
-        
+
         // Load ONNX model
         ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
         session = await ort.InferenceSession.create('cmudict_transformer.onnx');
-        
+
         statusEl.textContent = 'Model loaded successfully. Enter a word!';
         statusEl.style.color = '#27ae60';
         inputEl.disabled = false;
@@ -33,11 +33,11 @@ async function init() {
 btnEl.addEventListener('click', async () => {
     const word = inputEl.value.trim().toLowerCase();
     if (!word) return;
-    
+
     btnEl.disabled = true;
     inputEl.disabled = true;
     resultsEl.innerHTML = '<div style="text-align:center;">Predicting...</div>';
-    
+
     try {
         const topBeams = await predict(word, 5);
         displayResults(topBeams);
@@ -45,7 +45,7 @@ btnEl.addEventListener('click', async () => {
         resultsEl.innerHTML = `<div style="color:red;">Prediction error: ${e.message}</div>`;
         console.error(e);
     }
-    
+
     btnEl.disabled = false;
     inputEl.disabled = false;
     inputEl.focus();
@@ -74,19 +74,19 @@ async function predict(word, beamSize = 5) {
         }
     }
     srcTokens.push(EOS_IDX);
-    
+
     let completedBeams = [];
     let activeBeams = [{ tokens: [SOS_IDX], score: 0.0 }];
     const MAX_LEN = 50;
     const VOCAB_SIZE = Object.keys(vocab.idx_to_phone).length;
-    
+
     for (let step = 0; step < MAX_LEN; step++) {
         if (activeBeams.length === 0) break;
-        
+
         const batchSize = activeBeams.length;
         const tgtSeqLen = activeBeams[0].tokens.length;
         const srcSeqLen = srcTokens.length;
-        
+
         // Prepare src tensor [srcSeqLen, batchSize]
         const srcData = new BigInt64Array(srcSeqLen * batchSize);
         for (let i = 0; i < srcSeqLen; i++) {
@@ -94,7 +94,7 @@ async function predict(word, beamSize = 5) {
                 srcData[i * batchSize + b] = srcTokens[i];
             }
         }
-        
+
         // Prepare tgt tensor [tgtSeqLen, batchSize]
         const tgtData = new BigInt64Array(tgtSeqLen * batchSize);
         for (let i = 0; i < tgtSeqLen; i++) {
@@ -102,28 +102,28 @@ async function predict(word, beamSize = 5) {
                 tgtData[i * batchSize + b] = activeBeams[b].tokens[i];
             }
         }
-        
+
         const srcTensor = new ort.Tensor('int64', srcData, [srcSeqLen, batchSize]);
         const tgtTensor = new ort.Tensor('int64', tgtData, [tgtSeqLen, batchSize]);
-        
+
         const feeds = { src: srcTensor, tgt: tgtTensor };
         const results = await session.run(feeds);
         const output = results.output.data; // Float32Array [tgtSeqLen, batchSize, vocabSize]
-        
+
         let allCandidates = [];
         const lastStepOffset = (tgtSeqLen - 1) * batchSize * VOCAB_SIZE;
-        
+
         for (let b = 0; b < batchSize; b++) {
             // Get logits for this beam
             const logits = new Float32Array(VOCAB_SIZE);
             for (let v = 0; v < VOCAB_SIZE; v++) {
                 logits[v] = output[lastStepOffset + b * VOCAB_SIZE + v];
             }
-            
+
             // Log softmax
             const probs = softmax(Array.from(logits));
             const logProbs = probs.map(p => Math.log(Math.max(p, 1e-10)));
-            
+
             for (let v = 0; v < VOCAB_SIZE; v++) {
                 allCandidates.push({
                     tokens: [...activeBeams[b].tokens, BigInt(v)],
@@ -131,10 +131,10 @@ async function predict(word, beamSize = 5) {
                 });
             }
         }
-        
+
         // Sort all candidates by score descending
         allCandidates.sort((a, b) => b.score - a.score);
-        
+
         activeBeams = [];
         for (const cand of allCandidates) {
             if (cand.tokens[cand.tokens.length - 1] === EOS_IDX) {
@@ -142,28 +142,28 @@ async function predict(word, beamSize = 5) {
             } else {
                 activeBeams.push(cand);
             }
-            
+
             if (activeBeams.length + completedBeams.length >= beamSize) {
                 break;
             }
         }
-        
+
         if (completedBeams.length >= beamSize) {
             break;
         }
     }
-    
+
     // Fallback if not enough completed beams
     completedBeams.push(...activeBeams);
     completedBeams.sort((a, b) => b.score - a.score);
-    
+
     return completedBeams.slice(0, beamSize).map(b => {
         // Remove SOS and EOS
         const t = b.tokens.slice(1);
         if (t.length > 0 && t[t.length - 1] === EOS_IDX) t.pop();
-        
+
         const phoneStrs = t.map(v => vocab.idx_to_phone[v.toString()]);
-        
+
         // Convert log likelihood back to probability approx (very small, so just show exp score)
         const prob = Math.exp(b.score);
         return { phones: phoneStrs.join(" "), prob: prob, logScore: b.score };
@@ -175,15 +175,15 @@ function displayResults(beams) {
     beams.forEach((b, i) => {
         const p = document.createElement('div');
         p.className = 'result-item';
-        
+
         const phonesSpan = document.createElement('span');
         phonesSpan.className = 'phones';
         phonesSpan.textContent = b.phones;
-        
+
         const probSpan = document.createElement('span');
         probSpan.className = 'prob';
         probSpan.textContent = `P ≈ ${(b.prob * 100).toFixed(4)}%`;
-        
+
         p.appendChild(phonesSpan);
         p.appendChild(probSpan);
         resultsEl.appendChild(p);
