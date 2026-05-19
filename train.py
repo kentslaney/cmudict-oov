@@ -143,16 +143,11 @@ class Seq2SeqTransformer(nn.Module):
         
         self.out = nn.Linear(d_model, tgt_vocab_size)
         
-    def generate_square_subsequent_mask(self, sz):
-        mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
-        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
-        return mask
-
     def create_mask(self, src, tgt):
         src_seq_len = src.shape[0]
         tgt_seq_len = tgt.shape[0]
 
-        tgt_mask = self.generate_square_subsequent_mask(tgt_seq_len).to(device)
+        tgt_mask = nn.Transformer.generate_square_subsequent_mask(tgt_seq_len).to(device)
         src_mask = torch.zeros((src_seq_len, src_seq_len), device=device).type(torch.bool)
 
         src_padding_mask = (src == char_to_idx[PAD]).transpose(0, 1)
@@ -183,37 +178,38 @@ criterion = nn.CrossEntropyLoss(ignore_index=phone_to_idx[PAD])
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
 # 3. Training
-print("Starting training...")
-for epoch in range(EPOCHS):
-    model.train()
-    total_loss = 0
-    for i, (src, tgt) in enumerate(dataloader):
-        src = src.transpose(0, 1).to(device) # (seq_len, batch_size)
-        tgt = tgt.transpose(0, 1).to(device)
-        
-        tgt_input = tgt[:-1, :]
-        tgt_expected = tgt[1:, :]
-        
-        optimizer.zero_grad()
-        output = model(src, tgt_input)
-        
-        output = output.reshape(-1, output.shape[-1])
-        tgt_expected = tgt_expected.reshape(-1)
-        
-        loss = criterion(output, tgt_expected)
-        loss.backward()
-        optimizer.step()
-        
-        total_loss += loss.item()
-        
-        if (i+1) % 50 == 0:
-            print(f"Epoch {epoch+1}/{EPOCHS}, Batch {i+1}/{len(dataloader)}, Loss: {loss.item():.4f}")
+if __name__ == '__main__':
+    print("Starting training...")
+    for epoch in range(EPOCHS):
+        model.train()
+        total_loss = 0
+        for i, (src, tgt) in enumerate(dataloader):
+            src = src.transpose(0, 1).to(device) # (seq_len, batch_size)
+            tgt = tgt.transpose(0, 1).to(device)
             
-    print(f"Epoch {epoch+1}/{EPOCHS} Average Loss: {total_loss/len(dataloader):.4f}")
+            tgt_input = tgt[:-1, :]
+            tgt_expected = tgt[1:, :]
+            
+            optimizer.zero_grad()
+            output = model(src, tgt_input)
+            
+            output = output.reshape(-1, output.shape[-1])
+            tgt_expected = tgt_expected.reshape(-1)
+            
+            loss = criterion(output, tgt_expected)
+            loss.backward()
+            optimizer.step()
+            
+            total_loss += loss.item()
+            
+            if (i+1) % 50 == 0:
+                print(f"Epoch {epoch+1}/{EPOCHS}, Batch {i+1}/{len(dataloader)}, Loss: {loss.item():.4f}")
+                
+        print(f"Epoch {epoch+1}/{EPOCHS} Average Loss: {total_loss/len(dataloader):.4f}")
 
-print("Saving model checkpoint...")
-torch.save(model.state_dict(), "cmudict_transformer.pth")
-print("Model checkpoint saved to cmudict_transformer.pth")
+    print("Saving model checkpoint...")
+    torch.save(model.state_dict(), "cmudict_transformer.pth")
+    print("Model checkpoint saved to cmudict_transformer.pth")
 
 # 4. Inference
 def predict(word):
@@ -239,7 +235,8 @@ def predict(word):
     phones = [idx_to_phone[idx] for idx in tgt_tokens[1:-1]]
     return " ".join(phones)
 
-test_words = ["antigravity", "hello", "world", "xylophone"]
-print("\nInference Results:")
-for w in test_words:
-    print(f"{w} -> {predict(w)}")
+if __name__ == '__main__':
+    test_words = ["antigravity", "hello", "world", "xylophone"]
+    print("\nInference Results:")
+    for w in test_words:
+        print(f"{w} -> {predict(w)}")
