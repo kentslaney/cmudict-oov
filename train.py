@@ -14,7 +14,7 @@ NUM_ENCODER_LAYERS = 2
 NUM_DECODER_LAYERS = 2
 DIM_FEEDFORWARD = 512
 DROPOUT = 0.1
-EPOCHS = 10
+EPOCHS = 64
 LEARNING_RATE = 0.001
 
 device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
@@ -33,22 +33,22 @@ with open(DICT_FILE, 'r', encoding='latin-1') as f:
         line = line.strip()
         if not line or line.startswith(";;;"):
             continue
-        
+
         # Remove trailing comments
         line = line.split('#')[0].strip()
         parts = line.split()
         if not parts:
             continue
-            
+
         word = parts[0].lower()
         # Remove variant markings like (2)
         word = re.sub(r'\(\d+\)$', '', word)
-        
+
         phones = parts[1:]
-        
+
         words.append(word)
         pronunciations.append(phones)
-        
+
         for c in word:
             char_vocab.add(c)
         for p in phones:
@@ -82,23 +82,23 @@ class CMUDataset(Dataset):
             x = [char_to_idx[SOS]] + [char_to_idx[c] for c in w] + [char_to_idx[EOS]]
             y = [phone_to_idx[SOS]] + [phone_to_idx[ph] for ph in p] + [phone_to_idx[EOS]]
             self.data.append((x, y))
-            
+
     def __len__(self):
         return len(self.data)
-        
+
     def __getitem__(self, idx):
         return self.data[idx]
 
 def collate_fn(batch):
     batch.sort(key=lambda x: len(x[0]), reverse=True)
     xs, ys = zip(*batch)
-    
+
     max_x_len = max(len(x) for x in xs)
     max_y_len = max(len(y) for y in ys)
-    
+
     padded_xs = [x + [char_to_idx[PAD]] * (max_x_len - len(x)) for x in xs]
     padded_ys = [y + [phone_to_idx[PAD]] * (max_y_len - len(y)) for y in ys]
-    
+
     return torch.tensor(padded_xs), torch.tensor(padded_ys)
 
 dataset = CMUDataset(words, pronunciations)
@@ -126,11 +126,11 @@ class Seq2SeqTransformer(nn.Module):
     def __init__(self, src_vocab_size, tgt_vocab_size, d_model, nhead, num_encoder_layers, num_decoder_layers, dim_feedforward, dropout):
         super(Seq2SeqTransformer, self).__init__()
         self.d_model = d_model
-        
+
         self.src_emb = nn.Embedding(src_vocab_size, d_model)
         self.tgt_emb = nn.Embedding(tgt_vocab_size, d_model)
         self.pos_encoder = PositionalEncoding(d_model, dropout)
-        
+
         self.transformer = nn.Transformer(
             d_model=d_model,
             nhead=nhead,
@@ -140,9 +140,9 @@ class Seq2SeqTransformer(nn.Module):
             dropout=dropout,
             batch_first=False # We will transpose in forward
         )
-        
+
         self.out = nn.Linear(d_model, tgt_vocab_size)
-        
+
     def create_mask(self, src, tgt):
         src_seq_len = src.shape[0]
         tgt_seq_len = tgt.shape[0]
@@ -162,9 +162,9 @@ class Seq2SeqTransformer(nn.Module):
         tgt_emb = self.pos_encoder(self.tgt_emb(tgt) * math.sqrt(self.d_model))
 
         outs = self.transformer(
-            src_emb, tgt_emb, 
-            src_mask, tgt_mask, 
-            None, 
+            src_emb, tgt_emb,
+            src_mask, tgt_mask,
+            None,
             src_padding_mask, tgt_padding_mask, src_padding_mask
         )
         return self.out(outs)
@@ -186,25 +186,25 @@ if __name__ == '__main__':
         for i, (src, tgt) in enumerate(dataloader):
             src = src.transpose(0, 1).to(device) # (seq_len, batch_size)
             tgt = tgt.transpose(0, 1).to(device)
-            
+
             tgt_input = tgt[:-1, :]
             tgt_expected = tgt[1:, :]
-            
+
             optimizer.zero_grad()
             output = model(src, tgt_input)
-            
+
             output = output.reshape(-1, output.shape[-1])
             tgt_expected = tgt_expected.reshape(-1)
-            
+
             loss = criterion(output, tgt_expected)
             loss.backward()
             optimizer.step()
-            
+
             total_loss += loss.item()
-            
+
             if (i+1) % 50 == 0:
                 print(f"Epoch {epoch+1}/{EPOCHS}, Batch {i+1}/{len(dataloader)}, Loss: {loss.item():.4f}")
-                
+
         print(f"Epoch {epoch+1}/{EPOCHS} Average Loss: {total_loss/len(dataloader):.4f}")
 
     print("Saving model checkpoint...")
@@ -217,21 +217,21 @@ def predict(word):
     word = word.lower()
     src = [char_to_idx[SOS]] + [char_to_idx.get(c, char_to_idx[PAD]) for c in word] + [char_to_idx[EOS]]
     src = torch.tensor(src).unsqueeze(1).to(device) # (seq_len, 1)
-    
+
     tgt_tokens = [phone_to_idx[SOS]]
-    
+
     for _ in range(50):
         tgt = torch.tensor(tgt_tokens).unsqueeze(1).to(device)
-        
+
         with torch.no_grad():
             output = model(src, tgt)
-            
+
         next_token = output[-1, 0, :].argmax().item()
         tgt_tokens.append(next_token)
-        
+
         if next_token == phone_to_idx[EOS]:
             break
-            
+
     phones = [idx_to_phone[idx] for idx in tgt_tokens[1:-1]]
     return " ".join(phones)
 
