@@ -1,0 +1,21 @@
+# Environments
+venv/
+env/
+.env
+
+# PyTorch
+*.pth
+*.pt
+*.ckpt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+.DS_Store
