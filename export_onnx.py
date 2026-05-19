@@ -29,8 +29,8 @@ model.eval()
 model.create_mask = lambda src, tgt: (None, None, None, None)
 
 # 3. Export to ONNX
-src_len = 50
-tgt_len = 50
+src_len = 10
+tgt_len = 5
 batch_size = 5
 
 src = torch.randint(0, len(char_to_idx), (src_len, batch_size), dtype=torch.long)
@@ -42,9 +42,15 @@ torch.onnx.export(
     "cmudict_transformer.onnx",
     export_params=True,
     external_data=False,
+    opset_version=18,
     do_constant_folding=True,
     input_names=['src', 'tgt'],
-    output_names=['output']
+    output_names=['output'],
+    dynamic_axes={
+        'src': {0: 'src_seq_len', 1: 'batch_size'},
+        'tgt': {0: 'tgt_seq_len', 1: 'batch_size'},
+        'output': {0: 'tgt_seq_len', 1: 'batch_size'}
+    }
 )
 
 print("Model exported to cmudict_transformer.onnx")

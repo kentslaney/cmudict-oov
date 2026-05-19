@@ -83,47 +83,37 @@ async function predict(word, beamSize = 5) {
     for (let step = 0; step < MAX_LEN; step++) {
         if (activeBeams.length === 0) break;
         
+        const batchSize = activeBeams.length;
         const tgtSeqLen = activeBeams[0].tokens.length;
+        const srcSeqLen = srcTokens.length;
         
-        // Prepare src tensor [50, 5]
-        const srcData = new BigInt64Array(50 * 5);
-        for (let i = 0; i < 50; i++) {
-            for (let b = 0; b < 5; b++) {
-                if (i < srcTokens.length) {
-                    srcData[i * 5 + b] = srcTokens[i];
-                } else {
-                    srcData[i * 5 + b] = PAD_IDX;
-                }
+        // Prepare src tensor [srcSeqLen, batchSize]
+        const srcData = new BigInt64Array(srcSeqLen * batchSize);
+        for (let i = 0; i < srcSeqLen; i++) {
+            for (let b = 0; b < batchSize; b++) {
+                srcData[i * batchSize + b] = srcTokens[i];
             }
         }
         
-        // Prepare tgt tensor [50, 5]
-        const tgtData = new BigInt64Array(50 * 5);
-        for (let i = 0; i < 50; i++) {
-            for (let b = 0; b < 5; b++) {
-                // If this beam exists, pad its tokens, otherwise copy beam 0
-                const beamIdx = b < activeBeams.length ? b : 0;
-                if (i < activeBeams[beamIdx].tokens.length) {
-                    tgtData[i * 5 + b] = activeBeams[beamIdx].tokens[i];
-                } else {
-                    tgtData[i * 5 + b] = PAD_IDX;
-                }
+        // Prepare tgt tensor [tgtSeqLen, batchSize]
+        const tgtData = new BigInt64Array(tgtSeqLen * batchSize);
+        for (let i = 0; i < tgtSeqLen; i++) {
+            for (let b = 0; b < batchSize; b++) {
+                tgtData[i * batchSize + b] = activeBeams[b].tokens[i];
             }
         }
         
-        const srcTensor = new ort.Tensor('int64', srcData, [50, 5]);
-        const tgtTensor = new ort.Tensor('int64', tgtData, [50, 5]);
+        const srcTensor = new ort.Tensor('int64', srcData, [srcSeqLen, batchSize]);
+        const tgtTensor = new ort.Tensor('int64', tgtData, [tgtSeqLen, batchSize]);
         
         const feeds = { src: srcTensor, tgt: tgtTensor };
         const results = await session.run(feeds);
         const output = results.output.data; // Float32Array [tgtSeqLen, batchSize, vocabSize]
         
         let allCandidates = [];
-        // The output shape is [50, 5, VOCAB_SIZE]. We want the step corresponding to tgtSeqLen - 1
-        // We know we padded tgt to 50, but the "last" valid token was at index (tgtSeqLen - 1).
-        const lastStepOffset = (tgtSeqLen - 1) * 5 * VOCAB_SIZE;
+        const lastStepOffset = (tgtSeqLen - 1) * batchSize * VOCAB_SIZE;
         
-        for (let b = 0; b < activeBeams.length; b++) {
+        for (let b = 0; b < batchSize; b++) {
             // Get logits for this beam
             const logits = new Float32Array(VOCAB_SIZE);
             for (let v = 0; v < VOCAB_SIZE; v++) {
