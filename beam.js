@@ -138,7 +138,6 @@ class G2p {
         // Fallback if not enough completed beams
         completedBeams.push(...activeBeams)
         completedBeams.sort((a, b) => b.score - a.score)
-        console.log(completedBeams)
         return completedBeams.slice(0, beams)
             .map(({ tokens, score }) => this.decode(tokens))
     }
