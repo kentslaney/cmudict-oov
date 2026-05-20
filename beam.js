@@ -8,6 +8,8 @@ class G2p {
     static model_url = 'g2p/v2.onnx'
     static vocab_url = 'g2p/vocab.json'
 
+    #queue = Promise.resolve()
+
     constructor() {
         this.loading = Promise.all([
             fetch(G2p.vocab_url).then(x => x.json()),
@@ -44,6 +46,10 @@ class G2p {
         const exps = arr.map(x => Math.exp(x - max));
         const sum = exps.reduce((a, b) => a + b, 0);
         return exps.map(x => x / sum);
+    }
+
+    enqueue(word, beams=5) {
+        return this.#queue = this.#queue.then(() => this.predict(word, beams))
     }
 
     async predict(word, beams=5) {
